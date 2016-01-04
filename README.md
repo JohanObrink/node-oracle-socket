@@ -1,6 +1,13 @@
 # node-oracle-socket
 A node socket.io server for connecting to OracleDB
 
+## Usage
+
+* Follow the install instructions at https://github.com/oracle/node-oracledb/blob/master/INSTALL.md
+* ```npm install```
+* ```npm start```
+* Open http://localhost:3000
+
 ## License
 
 The MIT License (MIT)
