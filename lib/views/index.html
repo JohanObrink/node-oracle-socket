@@ -1,0 +1,248 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Oracle DB</title>
+    <style>
+      textarea {
+        width: 100%;
+        height: 200px;
+      }
+
+      table.db-result {
+        font-family: monospace;
+        font-size: 11px;
+      }
+      table.db-result tr {
+        margin: 0;
+      }
+      table.db-result thead tr {
+        background-color: silver;
+      }
+      table.db-result th, td {
+        margin: 0;
+        text-align: left;
+        padding: 10px;
+      }
+      table.db-result td.val__number {
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body ng-app="oracledb">
+    <div ng-controller="Main as vm">
+      <section class="connection">
+        <textarea class="config" ng-model="vm.config" ng-if="!vm.connected"></textarea>
+        <button ng-if="!vm.connected" ng-click="vm.connect()">Connect</button>
+        <button ng-if="vm.connected" ng-click="vm.disconnect()">Disconnect</button>
+      </section>
+
+      <section class="debug">
+        <textarea ng-model="vm.log"></textarea>
+      </section>
+
+      <section class="command">
+        <textarea ng-model="vm.sql"></textarea>
+        <button ng-click="vm.execute()">Send</button>
+      </section>
+
+      <section class="result">
+        <article ng-repeat="result in vm.results">
+          <button ng-click="vm.removeResult(result)">Delete</button>
+          <db-result sql="result.sql" rows="result.rows" />
+        </article>
+      </section>
+    </div>
+
+    <script src="https://code.angularjs.org/1.5.0-rc.0/angular.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      var socket = io.connect('http://localhost:3000');
+
+      angular.module('oracledb', []);
+
+      angular.module('oracledb').service('oracle', function () {
+
+        var oracle = {
+          connectionId: null,
+          connecting: false,
+          connect: connect,
+          disconnect: disconnect,
+          execute: execute
+        };
+
+        return oracle;
+
+        function connect(config) {
+          return new Promise((resolve, reject) => {
+            oracle.connecting = true;
+            socket.emit('db-connect', config, (err, connectionId) => {
+              oracle.connecting = false;
+              if(err) {
+                reject(err);
+              } else {
+                oracle.connectionId = connectionId;
+                resolve(connectionId);
+              }
+            });
+          });
+        }
+
+        function disconnect() {
+          return new Promise((resolve, reject) => {
+            socket.emit('db-release', oracle.connectionId, (err) => {
+              if(err) {
+                reject(err);
+              } else {
+                resolve(oracle.connectionId);
+                oracle.connectionId = null;
+              }
+            });
+          });
+        }
+
+        function execute(sql) {
+          return new Promise((resolve, reject) => {
+            socket.emit('db-execute', oracle.connectionId, sql, null, (err, res) => {
+              if(err) { reject(err); } else { resolve(res); }
+            });
+          });
+        }
+      });
+
+      angular.module('oracledb').controller('Main', function ($scope, oracle) {
+        var vm = this;
+
+        vm.config = JSON.stringify({user: '', password: '', host: '', database: ''}, null, '\t');
+        vm.connected = false;
+        vm.sending = false;
+        vm.results = [];
+        vm.log = '';
+
+        vm.connect = () => connect(JSON.parse(vm.config));
+        vm.disconnect = () => disconnect();
+        vm.execute = () => execute(vm.sql);
+        vm.clearLog = () => vm.log = '';
+        vm.clearResults = () => vm.results = [];
+        vm.removeResult = (result) => vm.results = vm.results.filter(res => res !== result);
+
+        function activate() {
+          apply();
+        }
+
+        function apply(fn) {
+          var phase = $scope.$root.$$phase;
+          if(phase == '$apply' || phase == '$digest') {
+            if(fn && (typeof(fn) === 'function')) {
+              fn();
+            }
+          } else {
+            $scope.$apply(fn);
+          }
+        }
+
+        function log(msg) {
+          var now = new Date();
+          var pad = num => (num < 10) ? '0' + num : '' + num;
+          var hours = pad(now.getHours()),
+            minutes = pad(now.getMinutes()),
+            seconds = pad(now.getSeconds());
+          var ts = `${hours}:${minutes}:${seconds}`;
+          vm.log = `[${ts}] ${msg}\n` + vm.log;
+
+          apply();
+        }
+
+        function logInfo(msg) {
+          log(`Info: ${msg}`);
+        }
+
+        function logError(err) {
+          log(`Error: ${err}`);
+        }
+
+        function connect(config) {
+          vm.sending = true;
+          return oracle.connect(config)
+            .then(connectionId => {
+              vm.connected = true;
+              vm.sending = false;
+              logInfo(`Connected to ${connectionId}`);
+            })
+            .catch(err => {
+              vm.connected = false;
+              vm.sending = false;
+              logError(err);
+            });
+        }
+
+        function disconnect() {
+          vm.sending = true;
+          return oracle.disconnect()
+            .then(connectionId => {
+              vm.connected = false;
+              vm.sending = false;
+              logInfo(`Disconnected from ${connectionId}`);
+            })
+            .catch(err => {
+              vm.sending = false;
+              logError(err);
+            });
+        }
+
+        function execute(sql) {
+          vm.sending = true;
+          return oracle.execute(sql)
+            .then(rows => {
+              vm.results.unshift({sql, rows});
+              vm.sending = false;
+              logInfo(`Execution successful. Result ${rows.length} rows.`)
+            })
+            .catch(err => {
+              vm.sending = false;
+              logError(err);
+            });
+        }
+
+        activate();
+      });
+
+      angular.module('oracledb').filter('dbValCss', function () {
+        return function (val) {
+          return `val__${typeof val}`;
+        };
+      });
+
+      angular.module('oracledb').directive('dbResult', function () {
+        return {
+          restrict: 'E',
+          replace: true,
+          scope: {
+            sql: '=',
+            rows: '='
+          },
+          template: `
+            <table class="db-result">
+              <thead>
+                <tr>
+                  <th ng-repeat="col in columns">{{::col}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr ng-repeat="row in rows">
+                  <td ng-repeat="col in columns" ng-class="row[col] | dbValCss">{{::row[col]}}</td>
+                </tr>
+              </tbody>
+            </table>
+          `,
+          link: function (scope, el) {
+            scope.columns = [];
+
+            if(scope.rows && scope.rows.length) {
+              scope.columns = Object.keys(scope.rows[0]);
+            }
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
