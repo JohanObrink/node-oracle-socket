@@ -1,15 +1,15 @@
 {
   "name": "node-oracle-socket",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "A node socket.io server for connecting to OracleDB",
   "main": "lib/socket.js",
   "scripts": {
     "start": "NLS_LANG=SWEDISH_SWEDEN.UTF8 nodemon ./lib/socket",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["node", "oracledb", "socket.io"],
+  "author": "Johan Öbrink <johan.obrink@gmail.com>",
+  "license": "MIT",
   "dependencies": {
     "change-case": "^2.3.1",
     "lodash": "^3.10.1",
